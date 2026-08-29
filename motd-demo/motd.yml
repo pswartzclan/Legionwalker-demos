@@ -1,0 +1,17 @@
+---
+- name: Deploy custom MOTD
+  hosts: all
+  become: true
+  tasks:
+    - name: Write custom MOTD
+      ansible.builtin.copy:
+        dest: /etc/motd
+        content: |
+          +======================================================+
+          |  CIQ Demo Node -- Managed by Ascender                |
+          |  This configuration was deployed via Ansible          |
+          |  Fleet: Demo Managed Nodes                             |
+          +======================================================+
+        owner: root
+        group: root
+        mode: "0644"
