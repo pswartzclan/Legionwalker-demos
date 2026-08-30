@@ -1,0 +1,53 @@
+---
+- name: Trust ELM CA and enroll ELM agent
+  hosts: managed-1,managed-2,managed-4
+  become: true
+  vars:
+    elm_url: "https://10.10.0.51:8443"
+  tasks:
+    - name: Ensure default route via br-provision gateway (safety net; DHCP option routers should normally provide this)
+      ansible.builtin.command: nmcli connection modify "System eth0" +ipv4.routes "0.0.0.0/0 10.10.0.1"
+      register: route_result
+      changed_when: "'no changes' not in route_result.stdout | default('') | lower"
+
+    - name: Bring connection back up to apply route
+      ansible.builtin.command: nmcli connection up "System eth0"
+      changed_when: false
+
+    - name: Install ELM CA certificate
+      ansible.builtin.copy:
+        dest: /etc/pki/ca-trust/source/anchors/elm-ca.crt
+        src: files/elm-ca.crt
+        owner: root
+        group: root
+        mode: "0644"
+      notify: update ca trust
+
+    - name: Flush handlers so trust store is updated before agent install
+      ansible.builtin.meta: flush_handlers
+
+    - name: Download agent bootstrap installer
+      ansible.builtin.get_url:
+        url: "{{ elm_url }}/agent/install.sh"
+        dest: /tmp/install-elm-agent.sh
+        mode: "0755"
+        force: true
+
+    - name: Run agent installer (safe to re-run)
+      ansible.builtin.command: sh /tmp/install-elm-agent.sh
+      register: install_result
+      changed_when: "'agent installed and started' in install_result.stdout"
+
+    - name: Run initial agent check-in
+      ansible.builtin.command: elm -once
+      register: checkin_result
+      changed_when: true
+      failed_when: "'FATAL' in checkin_result.stderr"
+
+    - name: Show check-in result
+      ansible.builtin.debug:
+        msg: "{{ checkin_result.stderr_lines }}"
+
+  handlers:
+    - name: update ca trust
+      ansible.builtin.command: update-ca-trust
