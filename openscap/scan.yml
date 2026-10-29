@@ -1,0 +1,41 @@
+---
+- name: OpenSCAP compliance scan
+  hosts: all
+  become: true
+  gather_facts: false
+  vars:
+    scan_datastream: /usr/share/xml/scap/ssg/content/ssg-rlch9-ds.xml
+    scan_profile: xccdf_org.ssgproject.content_profile_stig
+    scan_dir: /var/tmp/openscap
+  tasks:
+    - name: Create the results directory
+      ansible.builtin.file:
+        path: "{{ scan_dir }}"
+        state: directory
+        mode: "0700"
+
+    - name: Run the OpenSCAP scan
+      ansible.builtin.command:
+        argv:
+          - oscap
+          - xccdf
+          - eval
+          - --profile
+          - "{{ scan_profile }}"
+          - --results
+          - "{{ scan_dir }}/results-{{ inventory_hostname }}.xml"
+          - --report
+          - "{{ scan_dir }}/report-{{ inventory_hostname }}.html"
+          - "{{ scan_datastream }}"
+      register: scan
+      failed_when: scan.rc not in [0, 2]
+      changed_when: true
+
+    - name: Count results
+      ansible.builtin.set_fact:
+        n_pass: "{{ scan.stdout_lines | select('match', '^Result') | select('search', 'pass$') | list | length }}"
+        n_fail: "{{ scan.stdout_lines | select('match', '^Result') | select('search', 'fail$') | list | length }}"
+
+    - name: Show the summary
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }}: {{ n_pass }} passed, {{ n_fail }} failed ({{ scan_profile | regex_replace('^.*profile_', '') }})"
