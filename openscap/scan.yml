@@ -4,34 +4,57 @@
   become: true
   gather_facts: false
   vars:
-    scan_datastream: /usr/share/xml/scap/ssg/content/ssg-rlch9-ds.xml
+    content_dir: /usr/share/xml/scap/ssg/content
+    hardened: "{{ 'rlch' in group_names }}"
+    scan_datastream: "{{ content_dir }}/{{ 'ssg-rlch9-ds.xml' if hardened | bool else 'ssg-rl9-ds.xml' }}"
     scan_profile: xccdf_org.ssgproject.content_profile_stig
     scan_dir: /var/tmp/openscap
     results_file: "{{ scan_dir }}/results-{{ inventory_hostname }}.xml"
     report_file: "{{ scan_dir }}/report-{{ inventory_hostname }}.html"
   tasks:
+    - name: Install scan tooling on stock hosts
+      ansible.builtin.package:
+        name:
+          - openscap-scanner
+          - scap-security-guide
+        state: present
+      when: not (hardened | bool)
+
     - name: Create the results directory
       ansible.builtin.file:
         path: "{{ scan_dir }}"
         state: directory
         mode: "0755"
 
-    - name: Run the OpenSCAP scan
-      ansible.builtin.command:
-        argv:
-          - oscap
-          - xccdf
-          - eval
-          - --profile
-          - "{{ scan_profile }}"
-          - --results
-          - "{{ results_file }}"
-          - --report
-          - "{{ report_file }}"
-          - "{{ scan_datastream }}"
-      register: scan
-      failed_when: scan.rc not in [0, 2]
-      changed_when: true
+    - name: Run the scan, or explain why it failed
+      block:
+        - name: Run the OpenSCAP scan
+          ansible.builtin.command:
+            argv:
+              - oscap
+              - xccdf
+              - eval
+              - --profile
+              - "{{ scan_profile }}"
+              - --results
+              - "{{ results_file }}"
+              - --report
+              - "{{ report_file }}"
+              - "{{ scan_datastream }}"
+          register: scan
+          failed_when: scan.rc not in [0, 2]
+          changed_when: true
+      rescue:
+        - name: List the profiles that exist in this datastream
+          ansible.builtin.command: "oscap info --profiles {{ scan_datastream }}"
+          register: available
+          changed_when: false
+        - name: Show them
+          ansible.builtin.debug:
+            var: available.stdout_lines
+        - name: Stop with a clear message
+          ansible.builtin.fail:
+            msg: "Scan failed using profile {{ scan_profile }}. Available profiles are listed above."
 
     - name: Make the report readable
       ansible.builtin.file:
