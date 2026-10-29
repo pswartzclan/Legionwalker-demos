@@ -7,12 +7,14 @@
     scan_datastream: /usr/share/xml/scap/ssg/content/ssg-rlch9-ds.xml
     scan_profile: xccdf_org.ssgproject.content_profile_stig
     scan_dir: /var/tmp/openscap
+    results_file: "{{ scan_dir }}/results-{{ inventory_hostname }}.xml"
+    report_file: "{{ scan_dir }}/report-{{ inventory_hostname }}.html"
   tasks:
     - name: Create the results directory
       ansible.builtin.file:
         path: "{{ scan_dir }}"
         state: directory
-        mode: "0700"
+        mode: "0755"
 
     - name: Run the OpenSCAP scan
       ansible.builtin.command:
@@ -23,19 +25,29 @@
           - --profile
           - "{{ scan_profile }}"
           - --results
-          - "{{ scan_dir }}/results-{{ inventory_hostname }}.xml"
+          - "{{ results_file }}"
           - --report
-          - "{{ scan_dir }}/report-{{ inventory_hostname }}.html"
+          - "{{ report_file }}"
           - "{{ scan_datastream }}"
       register: scan
       failed_when: scan.rc not in [0, 2]
       changed_when: true
 
-    - name: Count results
-      ansible.builtin.set_fact:
-        n_pass: "{{ scan.stdout_lines | select('match', '^Result') | select('search', 'pass$') | list | length }}"
-        n_fail: "{{ scan.stdout_lines | select('match', '^Result') | select('search', 'fail$') | list | length }}"
+    - name: Make the report readable
+      ansible.builtin.file:
+        path: "{{ report_file }}"
+        mode: "0644"
+
+    - name: Count passed rules
+      ansible.builtin.shell: grep -c '<result>pass</result>' {{ results_file }} || true
+      register: pass_count
+      changed_when: false
+
+    - name: Count failed rules
+      ansible.builtin.shell: grep -c '<result>fail</result>' {{ results_file }} || true
+      register: fail_count
+      changed_when: false
 
     - name: Show the summary
       ansible.builtin.debug:
-        msg: "{{ inventory_hostname }}: {{ n_pass }} passed, {{ n_fail }} failed ({{ scan_profile | regex_replace('^.*profile_', '') }})"
+        msg: "{{ inventory_hostname }}: {{ pass_count.stdout }} passed, {{ fail_count.stdout }} failed ({{ scan_profile | regex_replace('^.*profile_', '') }})"
