@@ -5,20 +5,33 @@
   gather_facts: false
   vars:
     content_dir: /usr/share/xml/scap/ssg/content
-    hardened: "{{ 'rlch' in group_names }}"
-    scan_datastream: "{{ content_dir }}/{{ 'ssg-rlch9-ds.xml' if hardened | bool else 'ssg-rl9-ds.xml' }}"
     scan_profile: xccdf_org.ssgproject.content_profile_stig
     scan_dir: /var/tmp/openscap
     results_file: "{{ scan_dir }}/results-{{ inventory_hostname }}.xml"
     report_file: "{{ scan_dir }}/report-{{ inventory_hostname }}.html"
   tasks:
-    - name: Install scan tooling on stock hosts
+    - name: Check whether the scanner is installed
+      ansible.builtin.command: rpm -q openscap-scanner
+      register: scanner
+      changed_when: false
+      failed_when: false
+
+    - name: Install scan tooling where it is missing
       ansible.builtin.package:
         name:
           - openscap-scanner
           - scap-security-guide
         state: present
-      when: not (hardened | bool)
+      when: scanner.rc != 0
+
+    - name: Look for the Rocky 9 datastream
+      ansible.builtin.stat:
+        path: "{{ content_dir }}/ssg-rl9-ds.xml"
+      register: rl9
+
+    - name: Choose the datastream
+      ansible.builtin.set_fact:
+        scan_datastream: "{{ content_dir }}/{{ 'ssg-rl9-ds.xml' if rl9.stat.exists else 'ssg-rlch9-ds.xml' }}"
 
     - name: Create the results directory
       ansible.builtin.file:
@@ -73,4 +86,4 @@
 
     - name: Show the summary
       ansible.builtin.debug:
-        msg: "{{ inventory_hostname }}: {{ pass_count.stdout }} passed, {{ fail_count.stdout }} failed ({{ scan_profile | regex_replace('^.*profile_', '') }})"
+        msg: "{{ inventory_hostname }}: {{ pass_count.stdout }} passed, {{ fail_count.stdout }} failed ({{ scan_profile | regex_replace('^.*profile_', '') }}, {{ scan_datastream | basename }})"
