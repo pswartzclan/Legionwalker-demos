@@ -1,0 +1,19 @@
+---
+- name: Remove old kernels
+  hosts: all
+  become: true
+  tasks:
+    - name: Find old kernel packages (the newest set is kept)
+      ansible.builtin.command: dnf repoquery --installonly --latest-limit=-1 -q
+      register: old_kernels
+      changed_when: false
+
+    - name: Remove them
+      ansible.builtin.dnf:
+        name: "{{ old_kernels.stdout_lines }}"
+        state: absent
+      when: old_kernels.stdout_lines | length > 0
+
+    - name: Summary
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }}: {{ old_kernels.stdout_lines | length }} old kernel packages {{ 'removed' if old_kernels.stdout_lines | length > 0 else 'found, nothing to do' }}"
