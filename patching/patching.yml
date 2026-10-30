@@ -1,0 +1,46 @@
+---
+- name: Patch Enterprise Linux Hosts
+  hosts: all
+  become: true
+  vars:
+    security_updates: false
+    update_kernel: true
+    reboot_kernel: true
+    kernel_packages:
+      - kernel
+      - kernel-core
+      - kernel-modules*
+  tasks:
+    - name: Install updates (kernel handled separately)  # noqa: package-latest
+      ansible.builtin.dnf:
+        name: '*'
+        state: latest
+        update_cache: true
+        security: "{{ security_updates }}"
+        skip_broken: true
+        exclude: "{{ kernel_packages }}"
+      register: updates
+
+    - name: Install kernel updates  # noqa: package-latest
+      ansible.builtin.dnf:
+        name: kernel
+        state: latest
+      when: update_kernel | bool
+      register: updated_kernel
+
+    - name: Gather package facts
+      ansible.builtin.package_facts:
+        manager: auto
+      when: ansible_os_family != 'Windows'
+
+    - name: Reboot if a new kernel was installed
+      ansible.builtin.reboot:
+        reboot_timeout: 600
+      when:
+        - update_kernel | bool
+        - reboot_kernel | bool
+        - updated_kernel.changed
+
+    - name: Summary
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }}: package updates {{ 'applied' if updates.changed else 'none needed' }}, kernel {{ 'updated' if (updated_kernel.changed | default(false)) else 'unchanged' }}"
