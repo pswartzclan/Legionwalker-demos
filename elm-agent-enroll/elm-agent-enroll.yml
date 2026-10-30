@@ -1,6 +1,6 @@
 ---
 - name: Trust ELM CA and enroll ELM agent
-  hosts: managed-1,managed-2,managed-4
+  hosts: all
   become: true
   vars:
     elm_url: "https://10.10.0.51:8443"
