@@ -9,10 +9,12 @@
       ansible.builtin.command: nmcli connection modify "System eth0" +ipv4.routes "0.0.0.0/0 10.10.0.1"
       register: route_result
       changed_when: "'no changes' not in route_result.stdout | default('') | lower"
-
+      when: ansible_facts['default_ipv4'] | default({}) | length == 0
+      
     - name: Bring connection back up to apply route
       ansible.builtin.command: nmcli connection up "System eth0"
       changed_when: false
+      when: ansible_facts['default_ipv4'] | default({}) | length == 0
 
     - name: Install ELM CA certificate
       ansible.builtin.copy:
