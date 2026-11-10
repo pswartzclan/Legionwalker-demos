@@ -1,0 +1,54 @@
+---
+# preview-updates.v1.yml -- read-only preview of exactly what the patch
+# template would and would not touch on this host, right now.
+#
+# Installs NOTHING. Changes NOTHING. Pure `dnf check-update` query, split
+# into the same two buckets patching.yml uses (kernel vs. everything else),
+# so this preview's "yes" column matches what a real patch run would do.
+#
+# Use this right before launching Patch Enterprise Linux - Demo, to show
+# (and log, in Ascender's own job output) what's about to change -- instead
+# of eyeballing ELM's catalog against a host's installed state by hand.
+#
+# Suggested Ascender setup:
+#   - Add to the same repo/path style as the other demo playbooks, e.g.
+#     preview-updates/preview-updates.yml, then sync the project.
+#   - New template: "Preview Updates - Demo"
+#       Inventory: Demo Managed Nodes   Credentials: Demo Nodes SSH
+#       Playbook:  preview-updates/preview-updates.yml
+#       Privilege Escalation: on (dnf needs root to read the cache lock,
+#         even for a read-only check)
+#       Limit: Prompt on launch (so you pick the host each time)
+
+- name: Preview pending updates (no changes made)
+  hosts: all
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Check for non-kernel updates (what the main patch task would install)
+      ansible.builtin.command: dnf check-update --exclude=kernel*
+      register: non_kernel_check
+      changed_when: false
+      failed_when: non_kernel_check.rc not in [0, 100]
+
+    - name: Check for kernel updates specifically (gated behind update_kernel)
+      ansible.builtin.command: dnf check-update kernel --disableexcludes=all
+      register: kernel_check
+      changed_when: false
+      failed_when: kernel_check.rc not in [0, 100]
+
+    - name: Installed kernel version right now
+      ansible.builtin.command: uname -r
+      register: running_kernel
+      changed_when: false
+
+    - name: Preview summary
+      ansible.builtin.debug:
+        msg:
+          - "=== {{ inventory_hostname }} ==="
+          - 'Currently running kernel: {{ running_kernel.stdout }}'
+          - '--- Non-kernel updates (would be installed by a normal patch run) ---'
+          - "{{ non_kernel_check.stdout_lines if non_kernel_check.rc == 100 else ['(none pending)'] }}"
+          - '--- Kernel updates (only installed if update_kernel is set to yes) ---'
+          - "{{ kernel_check.stdout_lines if kernel_check.rc == 100 else ['(none pending)'] }}"
