@@ -1,0 +1,53 @@
+---
+# refresh-dnf-cache.v1.yml -- force every host to drop its cached repo
+# metadata and pull fresh data from ELM right now, instead of waiting for
+# the repo's own cache-expiry window.
+#
+# Use this right after promoting/composing a Content View in ELM, before
+# running a patch job, so the host actually sees the newly-published
+# packages rather than what it last cached.
+#
+# Safe to run anytime: it only refreshes metadata, it does not install or
+# change any package. failed_when is relaxed on the check-update task
+# because `dnf check-update` exits 100 (not 0) when updates ARE found --
+# that is success, not failure, for our purposes.
+#
+# Suggested Ascender setup:
+#   - Add this file to the LegionWalker Demos (or Ascender Playbooks) repo,
+#     e.g. under dnf-refresh/refresh-dnf-cache.yml, then sync the project.
+#   - New template: "Refresh DNF Cache - Demo"
+#       Inventory: Demo Managed Nodes   Credentials: Demo Nodes SSH
+#       Playbook:  dnf-refresh/refresh-dnf-cache.yml
+#   - Run it with a Limit on whichever host(s) you just changed content for.
+
+- name: Refresh DNF/repo metadata from ELM
+  hosts: all
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Drop all cached metadata and package data
+      ansible.builtin.command: dnf clean all
+      changed_when: true
+      register: dnf_clean
+
+    - name: Rebuild the metadata cache from the repos now
+      ansible.builtin.command: dnf makecache
+      changed_when: true
+      register: dnf_makecache
+
+    - name: See what's now available (informational only, never fails the play)
+      ansible.builtin.command: dnf check-update
+      register: dnf_check
+      changed_when: false
+      failed_when: dnf_check.rc not in [0, 100]
+      # rc 0  = cache rebuilt, nothing new to update
+      # rc 100 = cache rebuilt, updates ARE available (this is the expected
+      #          "good" result right after a content promotion)
+      # anything else = a real problem (bad repo, auth failure, etc.)
+
+    - name: Summary
+      ansible.builtin.debug:
+        msg: >-
+          {{ inventory_hostname }}: cache refreshed.
+          {{ 'Updates available.' if dnf_check.rc == 100 else 'No updates pending.' }}
