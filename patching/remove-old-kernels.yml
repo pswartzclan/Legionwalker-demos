@@ -14,6 +14,17 @@
         state: absent
       when: old_kernels.stdout_lines | length > 0
 
+    - name: Upgrade kernel-tools and kernel-tools-libs (not installonly, so they're missed by the step above and by the main patch task's kernel* exclude)
+      ansible.builtin.dnf:
+        name:
+          - kernel-tools
+          - kernel-tools-libs
+        state: latest
+      register: tools_upgrade
+
     - name: Summary
       ansible.builtin.debug:
-        msg: "{{ inventory_hostname }}: {{ old_kernels.stdout_lines | length }} old kernel packages {{ 'removed' if old_kernels.stdout_lines | length > 0 else 'found, nothing to do' }}"
+        msg: >-
+          {{ inventory_hostname }}: {{ old_kernels.stdout_lines | length }} old kernel packages
+          {{ 'removed' if old_kernels.stdout_lines | length > 0 else 'found, nothing to do' }}.
+          kernel-tools/kernel-tools-libs {{ 'upgraded' if tools_upgrade.changed else 'already current' }}.
